@@ -16,6 +16,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from backend.api.config import router as config_router
 from backend.api.task import router as task_router
 from backend.api.result import router as result_router
+from backend.api.proxy import router as proxy_router
 from backend.api.auth import router as auth_router, verify_token
 from backend.api.websocket import ws_manager, broadcast_status, broadcast_log
 from backend.core.state import state
@@ -87,6 +88,7 @@ app.include_router(auth_router)
 app.include_router(config_router)
 app.include_router(task_router)
 app.include_router(result_router)
+app.include_router(proxy_router)
 
 
 @app.middleware("http")

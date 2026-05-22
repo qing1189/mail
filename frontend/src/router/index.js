@@ -31,6 +31,12 @@ const routes = [
     meta: { title: '配置管理', icon: 'Setting' },
   },
   {
+    path: '/proxy',
+    name: 'Proxy',
+    component: () => import('@/views/Proxy.vue'),
+    meta: { title: '代理管理', icon: 'Connection' },
+  },
+  {
     path: '/results',
     name: 'Results',
     component: () => import('@/views/Results.vue'),

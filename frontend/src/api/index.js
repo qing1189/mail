@@ -42,6 +42,15 @@ export const taskApi = {
   getSuccess: (limit = 100) => api.get('/task/success', { params: { limit } }),
 }
 
+// 代理 API
+export const proxyApi = {
+  get: () => api.get('/proxies'),
+  save: (proxies) => api.post('/proxies', { proxies }),
+  add: (proxy) => api.post('/proxies/add', proxy),
+  delete: (host, port) => api.delete(`/proxies/${host}/${port}`),
+  clear: () => api.delete('/proxies'),
+}
+
 // 结果 API
 export const resultApi = {
   get: (params) => api.get('/results', { params }),
