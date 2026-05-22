@@ -49,16 +49,21 @@ class BaseBrowserController(ABC):
         pass
 
     def get_thread_page(self, proxy_config=None):
-        proxy_config = get_working_proxy(preferred_proxy=proxy_config, reserve=True)
-        if not proxy_config:
-            print("[Error: Proxy Pool] - 没有可用的 HTTPS 代理。")
-            return False
-
-        print(f"[Info: Proxy] - current task using {format_proxy_label(proxy_config)}")
+        # 如果传入的 proxy_config 不是 None，才尝试获取代理
+        if proxy_config is not None:
+            proxy_config = get_working_proxy(preferred_proxy=proxy_config, reserve=True)
+            if not proxy_config:
+                print("[Error: Proxy Pool] - 没有可用的 HTTPS 代理。")
+                return False
+            print(f"[Info: Proxy] - current task using {format_proxy_label(proxy_config)}")
+        else:
+            # proxy_config 为 None 表示不使用代理（直连模式）
+            print("[Info: Proxy] - 直连模式，不使用代理")
 
         page, resource = self.launch_browser(proxy_config)
         if not page:
-            release_proxy(proxy_config)
+            if proxy_config:
+                release_proxy(proxy_config)
             return False
 
         resource["proxy_config"] = proxy_config
