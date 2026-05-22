@@ -121,6 +121,8 @@ class TaskManager:
         """并发执行任务"""
         task_counter = 0
         proxy_source = get_proxy_source_config().get("proxy_source", "file")
+        proxy_wait_count = 0
+        max_proxy_wait = 30  # 最大等待代理次数（每次1秒，共30秒）
 
         state.task_status.total_tasks = max_tasks
         state.task_status.is_running = True
@@ -129,69 +131,103 @@ class TaskManager:
 
         print(f"[TaskManager] 启动任务: 并发={concurrent_flows}, 总数={max_tasks}, 代理模式={proxy_source}")
 
-        with ThreadPoolExecutor(max_workers=concurrent_flows) as executor:
-            self._executor = executor
-            running_futures = {}
+        try:
+            with ThreadPoolExecutor(max_workers=concurrent_flows) as executor:
+                self._executor = executor
+                running_futures = {}
 
-            while True:
-                should_submit = task_counter < max_tasks and not self._stop_event.is_set()
-                if not should_submit and not running_futures:
-                    break
+                while True:
+                    # 检查停止事件
+                    if self._stop_event.is_set():
+                        print("[TaskManager] 收到停止信号，等待运行中的任务完成...")
+                        # 等待所有运行中的任务完成
+                        for future in running_futures:
+                            try:
+                                future.result(timeout=30)
+                            except Exception:
+                                pass
+                        break
 
-                # 检查完成的任务
-                done_futures = [f for f in running_futures if f.done()]
-                for future in done_futures:
-                    task_id = running_futures.pop(future)
-                    try:
-                        result = future.result()
-                        if result["success"]:
-                            state.task_status.succeeded += 1
-                            if self._controller.enable_oauth2:
-                                if result["oauth_success"]:
-                                    state.task_status.oauth_succeeded += 1
-                                else:
-                                    state.task_status.oauth_failed += 1
-                        else:
-                            state.task_status.failed += 1
-                    except Exception as e:
-                        state.task_status.failed += 1
-                        print(f"[Task-{task_id}] 异常: {str(e)}")
-                    self._notify_status()
+                    should_submit = task_counter < max_tasks
+                    if not should_submit and not running_futures:
+                        break
 
-                # 提交新任务
-                while (
-                    len(running_futures) < concurrent_flows
-                    and task_counter < max_tasks
-                    and not self._stop_event.is_set()
-                ):
-                    assigned_proxy = None
-                    if proxy_source != "none":
-                        assigned_proxy = get_next_proxy_assignment()
-                        if not assigned_proxy:
-                            if proxy_source == "api":
-                                print("[TaskManager] 等待代理...")
-                                time.sleep(1.0)
-                                break
+                    # 检查完成的任务
+                    done_futures = [f for f in running_futures if f.done()]
+                    for future in done_futures:
+                        task_id = running_futures.pop(future)
+                        try:
+                            result = future.result()
+                            if result["success"]:
+                                state.task_status.succeeded += 1
+                                if self._controller.enable_oauth2:
+                                    if result["oauth_success"]:
+                                        state.task_status.oauth_succeeded += 1
+                                    else:
+                                        state.task_status.oauth_failed += 1
                             else:
-                                print(f"[TaskManager] 代理文件中没有可用代理，请检查代理配置")
-                                self._stop_event.set()
-                                break
-                    
-                    task_counter += 1
-                    future = executor.submit(self._process_single_flow, task_counter, assigned_proxy)
-                    running_futures[future] = task_counter
-                    state.task_status.submitted = task_counter
+                                state.task_status.failed += 1
+                        except Exception as e:
+                            state.task_status.failed += 1
+                            print(f"[Task-{task_id}] 异常: {str(e)}")
+                        self._notify_status()
+
+                    # 提交新任务
+                    submit_blocked = False
+                    while (
+                        len(running_futures) < concurrent_flows
+                        and task_counter < max_tasks
+                        and not self._stop_event.is_set()
+                    ):
+                        assigned_proxy = None
+                        if proxy_source != "none":
+                            assigned_proxy = get_next_proxy_assignment()
+                            if not assigned_proxy:
+                                if proxy_source == "api":
+                                    proxy_wait_count += 1
+                                    if proxy_wait_count >= max_proxy_wait:
+                                        print(f"[TaskManager] 等待代理超时（{max_proxy_wait}秒），停止任务")
+                                        self._stop_event.set()
+                                        submit_blocked = True
+                                        break
+                                    print(f"[TaskManager] 等待代理... ({proxy_wait_count}/{max_proxy_wait})")
+                                    time.sleep(1.0)
+                                    submit_blocked = True
+                                    break
+                                else:
+                                    print("[TaskManager] 代理文件中没有可用代理，请检查代理配置")
+                                    self._stop_event.set()
+                                    submit_blocked = True
+                                    break
+                        
+                        # 成功获取代理，重置等待计数
+                        proxy_wait_count = 0
+                        task_counter += 1
+                        future = executor.submit(self._process_single_flow, task_counter, assigned_proxy)
+                        running_futures[future] = task_counter
+                        state.task_status.submitted = task_counter
+                        self._notify_status()
+
+                    state.task_status.active_threads = len(running_futures)
                     self._notify_status()
 
-                state.task_status.active_threads = len(running_futures)
-                time.sleep(0.3)
+                    # 如果提交被阻塞（等待代理），短暂休眠后继续
+                    if submit_blocked and not self._stop_event.is_set():
+                        time.sleep(0.5)
+                    elif not running_futures and not should_submit:
+                        break
+                    elif not submit_blocked:
+                        time.sleep(0.3)
 
-            state.task_status.active_threads = 0
-            self._executor = None
-
-        state.task_status.is_running = False
-        print(f"[TaskManager] 任务完成: 成功={state.task_status.succeeded}, 失败={state.task_status.failed}")
-        self._notify_status()
+                state.task_status.active_threads = 0
+                self._executor = None
+        except Exception as e:
+            print(f"[TaskManager] 任务执行异常: {str(e)}")
+        finally:
+            state.task_status.is_running = False
+            state.task_status.is_stopping = False
+            print(f"[TaskManager] 任务完成: 成功={state.task_status.succeeded}, 失败={state.task_status.failed}")
+            self._notify_status()
 
     def start(self, config: dict) -> bool:
         """启动任务"""
