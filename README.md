@@ -22,6 +22,9 @@ python main.py            # CLI 模式
 镜像已经把 Firefox ESR + 中文字体 + 默认 headless 配置好,开箱即用。
 
 ```bash
+# 第一次:复制环境变量模板,按需修改
+cp .env.example .env
+
 # 启动 Web 控制台 (默认服务)
 docker compose up -d
 
@@ -40,6 +43,24 @@ docker compose down
 docker compose --profile cli run --rm cli
 ```
 
+### 环境变量(`.env` 文件)
+
+所有 Docker 相关的可调参数都在 `.env` 里集中管理。常用:
+
+| 变量 | 默认值 | 说明 |
+|---|---|---|
+| `HOST_PORT` | `8787` | 宿主机暴露的端口 |
+| `WEB_PORT` | `8787` | 容器内 uvicorn 监听端口 |
+| `TZ` | `Asia/Shanghai` | 容器时区 |
+| `SHM_SIZE` | `1gb` | Firefox 共享内存(默认 64M 必崩) |
+| `RESTART_POLICY` | `unless-stopped` | 容器重启策略 |
+| `IMAGE_TAG` | `ms-mail-reg-tool:latest` | 镜像 tag |
+| `CONTAINER_NAME_WEB` | `ms-mail-web` | Web 容器名 |
+| `DEFAULT_HEADLESS` | `true` | 首次生成 config.json 时的 headless 默认值 |
+| `DEFAULT_BROWSER_PATH` | `/usr/bin/firefox-esr` | 同上,Firefox 路径 |
+
+不修改 `.env` 也能跑(全部都有兜底值),只是改端口/时区/容器名时方便些。
+
 ### 持久化数据
 
 所有运行时数据都落在宿主机 `./data/` 目录,**首次启动会自动生成默认 config.json**:
@@ -55,14 +76,15 @@ docker compose --profile cli run --rm cli
 
 ### 自定义端口 / 主机名
 
-编辑 `docker-compose.yml` 的 `ports` 段:
+直接改 `.env` 里的 `HOST_PORT`(宿主机) 或 `WEB_PORT`(容器内)即可:
 
-```yaml
-services:
-  web:
-    ports:
-      - "9000:8787"     # 宿主机 9000 → 容器 8787
+```bash
+# .env
+HOST_PORT=9000
+WEB_PORT=8787
 ```
+
+然后 `docker compose up -d` 重启即可。
 
 ### 关于代理来源
 

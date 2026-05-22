@@ -51,4 +51,6 @@ VOLUME ["/data"]
 EXPOSE 8787
 
 ENTRYPOINT ["/usr/bin/tini", "--", "/app/docker/entrypoint.sh"]
-CMD ["python", "web_main.py", "--host", "0.0.0.0", "--port", "8787"]
+# CMD 走 sh -c 是为了让 ${WEB_PORT} 能被 shell 展开;
+# 容器有 .env 时 docker-compose 会注入 WEB_PORT,无则回退 8787。
+CMD ["sh", "-c", "exec python web_main.py --host 0.0.0.0 --port ${WEB_PORT:-8787}"]

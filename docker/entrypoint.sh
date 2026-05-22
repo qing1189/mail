@@ -3,32 +3,40 @@
 # 1) 在 $MAIL_DATA_DIR (默认 /data) 下准备好 config.json / proxies.txt /
 #    Results/ / Profiles/
 # 2) 软链到 /app 下,让 Python 代码 不感知 数据目录
-# 3) exec 用户指定的 CMD (默认 web_main.py;CLI 模式则是 main.py)
+# 3) 默认 config.json 的初值由 .env 里的 DEFAULT_* 变量控制
+# 4) exec 用户指定的 CMD (默认 web_main.py;CLI 模式则是 main.py)
 set -e
 
 DATA_DIR="${MAIL_DATA_DIR:-/data}"
 mkdir -p "$DATA_DIR/Results" "$DATA_DIR/Profiles"
 
 # ── 默认 config.json ──────────────────────────────────────────
-# 仅当 文件不存在或为空 时写入默认值
-# - 默认 headless=true (容器无图形界面)
-# - browser_path 指向 Debian 包安装的 firefox-esr
-# - web.host=0.0.0.0 让 Web 控制台能从宿主机访问
+# 仅当 文件不存在或为空 时才写入默认值。
+# 之后用户在 Web 控制台里修改保存的设置,本脚本不会覆盖。
 if [ ! -s "$DATA_DIR/config.json" ]; then
-    cat > "$DATA_DIR/config.json" <<'EOF'
+    DEFAULT_HEADLESS="${DEFAULT_HEADLESS:-true}"
+    DEFAULT_BROWSER_PATH="${DEFAULT_BROWSER_PATH:-/usr/bin/firefox-esr}"
+    DEFAULT_PROFILE_ROOT="${DEFAULT_PROFILE_ROOT:-Profiles}"
+    WEB_PORT="${WEB_PORT:-8787}"
+
+    # heredoc 不带引号,允许变量展开
+    cat > "$DATA_DIR/config.json" <<EOF
 {
     "ruyipage": {
-        "headless": true,
-        "browser_path": "/usr/bin/firefox-esr",
-        "profile_root": "Profiles"
+        "headless": ${DEFAULT_HEADLESS},
+        "browser_path": "${DEFAULT_BROWSER_PATH}",
+        "profile_root": "${DEFAULT_PROFILE_ROOT}"
     },
     "web": {
         "host": "0.0.0.0",
-        "port": 8787
+        "port": ${WEB_PORT}
     }
 }
 EOF
-    echo "[entrypoint] 已生成默认 $DATA_DIR/config.json (headless + 系统 Firefox)"
+    echo "[entrypoint] 已生成默认 $DATA_DIR/config.json"
+    echo "[entrypoint]   - headless=${DEFAULT_HEADLESS}"
+    echo "[entrypoint]   - browser_path=${DEFAULT_BROWSER_PATH}"
+    echo "[entrypoint]   - web.port=${WEB_PORT}"
 fi
 
 # 空的 proxies.txt 占位,避免 file 模式找不到文件
