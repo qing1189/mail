@@ -370,10 +370,11 @@ def collect_user_inputs():
     print("      1. file (从文件读取 HOST:PORT:USER:PASS)")
     print("      2. freefile (从文件读取 HOST:PORT)")
     print("      3. api (从 API 获取)")
-    source_map = {"file": "1", "freefile": "2", "api": "3"}
+    print("      4. none (直连,不使用代理)")
+    source_map = {"file": "1", "freefile": "2", "api": "3", "none": "4"}
     default_proxy_choice = source_map.get(cfg.get("proxy_source", "api"), "3")
-    proxy_choice = prompt_choice("      请选择", ["1", "2", "3"], default=default_proxy_choice)
-    proxy_source_map = {"1": "file", "2": "freefile", "3": "api"}
+    proxy_choice = prompt_choice("      请选择", ["1", "2", "3", "4"], default=default_proxy_choice)
+    proxy_source_map = {"1": "file", "2": "freefile", "3": "api", "4": "none"}
     proxy_source = proxy_source_map[proxy_choice]
     print(f"      -> {proxy_source}\n")
 
@@ -384,10 +385,12 @@ def collect_user_inputs():
         print("  [3] 代理文件路径:")
         proxy_file = prompt_str("      请输入", default=proxy_file)
         print(f"      -> {proxy_file}\n")
-    else:
+    elif proxy_source == "api":
         print("  [3] 代理 API 地址:")
         proxy_api_url = prompt_str("      请输入", default=proxy_api_url)
         print(f"      -> {proxy_api_url}\n")
+    else:
+        print("  [3] 直连模式,跳过代理配置\n")
 
     # [4] 并发线程数
     print("  [4] 并发线程数:")

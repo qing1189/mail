@@ -1,0 +1,21 @@
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.venv/
+venv/
+*.egg-info/
+.pytest_cache/
+
+# 项目运行时产物
+config.json
+proxies.txt
+Profiles/
+Results/
+*.log
+
+# 编辑器
+.idea/
+.vscode/
+.DS_Store
