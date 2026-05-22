@@ -208,6 +208,7 @@
               📤 上传
               <input type="file" accept=".txt" @change="uploadProxyFile($event)" style="display:none">
             </label>
+            <button class="btn danger small" @click="deleteProxyFile()" :disabled="proxySaving">🗑 删除文件</button>
             <span class="muted" x-text="proxyFileMsg"></span>
           </div>
         </div>

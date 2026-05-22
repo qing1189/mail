@@ -344,6 +344,23 @@ function mainApp() {
       }
     },
 
+    async deleteProxyFile() {
+      if (!confirm("确认删除 proxies.txt? 文件会从磁盘移除,编辑器内容会被清空。")) return;
+      this.proxySaving = true;
+      this.proxyFileMsg = "";
+      try {
+        const r = await api.del("/api/proxies/file");
+        this.proxyFile.content = "";
+        this.proxyFile.exists = false;
+        this.proxyFileMsg = r.existed ? "✓ 文件已删除" : "(文件原本就不存在)";
+        setTimeout(() => this.proxyFileMsg = "", 2500);
+      } catch (e) {
+        this.proxyFileMsg = "✗ 删除失败: " + e.message;
+      } finally {
+        this.proxySaving = false;
+      }
+    },
+
     async runProxyTest() {
       this.proxyTest.running = true;
       this.proxyTest.results = [];

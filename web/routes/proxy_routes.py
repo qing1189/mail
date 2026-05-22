@@ -79,6 +79,19 @@ async def upload_file(file: UploadFile = File(...), _=Depends(require_session)):
     return {"ok": True, "filename": file.filename, "bytes": len(raw)}
 
 
+@router.delete("/file")
+def delete_file(_=Depends(require_session)):
+    """删除当前的代理文件(由用户主动清理)。"""
+    path = _resolve_proxy_file_path()
+    if not path.exists():
+        return {"ok": True, "existed": False}
+    try:
+        path.unlink()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"删除失败: {e}")
+    return {"ok": True, "existed": True}
+
+
 @router.post("/test")
 def test_endpoint(payload: dict = Body(default={}), _=Depends(require_session)):
     """测试代理。
