@@ -5,7 +5,7 @@ import sys
 from contextlib import asynccontextmanager
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, WebSocket, WebSocketDisconnect, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
@@ -16,12 +16,24 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 from backend.api.config import router as config_router
 from backend.api.task import router as task_router
 from backend.api.result import router as result_router
+from backend.api.auth import router as auth_router, verify_token
 from backend.api.websocket import ws_manager, broadcast_status
 from backend.core.state import state
 from backend.core.task_manager import task_manager
 
 # 静态文件目录
 STATIC_DIR = Path(__file__).parent.parent / "static"
+
+# 不需要认证的路径
+PUBLIC_PATHS = [
+    "/api/auth/login",
+    "/api/auth/check",
+    "/api/auth/status",
+    "/health",
+    "/docs",
+    "/openapi.json",
+    "/redoc",
+]
 
 
 @asynccontextmanager
@@ -51,9 +63,41 @@ app.add_middleware(
 )
 
 # 注册 API 路由
+app.include_router(auth_router)
 app.include_router(config_router)
 app.include_router(task_router)
 app.include_router(result_router)
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """认证中间件"""
+    path = request.url.path
+    
+    # 公开路径不需要认证
+    if any(path.startswith(p) for p in PUBLIC_PATHS):
+        return await call_next(request)
+    
+    # WebSocket 连接检查 cookie
+    if path.startswith("/ws/"):
+        token = request.cookies.get("auth_token")
+        if not verify_token(token):
+            return Response(status_code=401, content="Unauthorized")
+        return await call_next(request)
+    
+    # 静态资源和首页不需要认证（前端会处理登录状态）
+    if path.startswith("/assets") or path == "/" or path == "/index.html":
+        return await call_next(request)
+    
+    # API 路由需要认证
+    if path.startswith("/api/"):
+        token = request.cookies.get("auth_token")
+        if not verify_token(token):
+            return Response(status_code=401, content="Unauthorized")
+        return await call_next(request)
+    
+    # 其他路径（SPA 路由）不需要认证
+    return await call_next(request)
 
 
 @app.websocket("/ws/status")

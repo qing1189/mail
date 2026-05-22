@@ -46,6 +46,16 @@
             线程: <strong>{{ taskStore.status.active_threads }}</strong>
           </span>
         </div>
+        <div class="header-right">
+          <el-dropdown @command="handleCommand">
+            <el-button :icon="User" circle />
+            <template #dropdown>
+              <el-dropdown-menu>
+                <el-dropdown-item command="logout">登出</el-dropdown-item>
+              </el-dropdown-menu>
+            </template>
+          </el-dropdown>
+        </div>
       </el-header>
 
       <!-- 页面内容 -->
@@ -59,7 +69,10 @@
 <script setup>
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
+import { User } from '@element-plus/icons-vue'
+import { ElMessage } from 'element-plus'
 import { useTaskStore } from '@/stores/task'
+import { authApi } from '@/api'
 
 const route = useRoute()
 const router = useRouter()
@@ -70,7 +83,7 @@ const isCollapse = ref(false)
 const currentRoute = computed(() => route.path)
 
 const menuRoutes = computed(() => {
-  return router.getRoutes().filter((r) => r.meta && r.meta.title)
+  return router.getRoutes().filter((r) => r.meta && r.meta.title && !r.meta.public)
 })
 
 onMounted(() => {
@@ -81,6 +94,19 @@ onMounted(() => {
 onUnmounted(() => {
   taskStore.disconnectWebSocket()
 })
+
+async function handleCommand(command) {
+  if (command === 'logout') {
+    try {
+      await authApi.logout()
+      taskStore.disconnectWebSocket()
+      ElMessage.success('已登出')
+      router.push('/login')
+    } catch (e) {
+      ElMessage.error('登出失败')
+    }
+  }
+}
 </script>
 
 <style>
@@ -130,6 +156,7 @@ html, body, #app {
   border-bottom: 1px solid #f0f0f0;
   display: flex;
   align-items: center;
+  justify-content: space-between;
   padding: 0 24px;
 }
 
@@ -147,6 +174,11 @@ html, body, #app {
 .status-item strong {
   color: #333;
   margin-left: 4px;
+}
+
+.header-right {
+  display: flex;
+  align-items: center;
 }
 
 .app-main {

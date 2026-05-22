@@ -1,4 +1,5 @@
 import axios from 'axios'
+import router from '@/router'
 
 const api = axios.create({
   baseURL: '/api',
@@ -9,10 +10,21 @@ const api = axios.create({
 api.interceptors.response.use(
   (response) => response.data,
   (error) => {
+    // 401 未授权，跳转到登录页
+    if (error.response?.status === 401) {
+      router.push('/login')
+    }
     console.error('API Error:', error)
     return Promise.reject(error)
   }
 )
+
+// 认证 API
+export const authApi = {
+  login: (password) => api.post('/auth/login', { password }),
+  logout: () => api.post('/auth/logout'),
+  check: () => api.get('/auth/check'),
+}
 
 // 配置 API
 export const configApi = {

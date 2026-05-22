@@ -1,6 +1,13 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import { authApi } from '@/api'
 
 const routes = [
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/views/Login.vue'),
+    meta: { title: '登录', public: true },
+  },
   {
     path: '/',
     redirect: '/dashboard',
@@ -34,6 +41,28 @@ const routes = [
 const router = createRouter({
   history: createWebHistory(),
   routes,
+})
+
+// 路由守卫
+router.beforeEach(async (to, from, next) => {
+  // 公开页面直接放行
+  if (to.meta.public) {
+    next()
+    return
+  }
+
+  // 检查认证状态
+  try {
+    const res = await authApi.check()
+    if (res.authenticated) {
+      next()
+    } else {
+      next('/login')
+    }
+  } catch (e) {
+    // API 错误（可能是未启动后端）
+    next('/login')
+  }
 })
 
 export default router
