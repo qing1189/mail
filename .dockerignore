@@ -28,11 +28,10 @@ Results/
 # 浏览器配置文件（运行时生成）
 Profiles/
 
-# Docker 相关
+# Docker 相关（保留 docker-entrypoint.sh）
 Dockerfile
 docker-compose.yml
 .dockerignore
-docker-entrypoint.sh
 
 # 文档
 README.md
