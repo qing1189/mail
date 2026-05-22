@@ -1,0 +1,52 @@
+# Git
+.git
+.gitignore
+
+# Python 缓存
+__pycache__
+*.py[cod]
+*$py.class
+*.so
+.Python
+*.egg-info
+dist
+build
+
+# IDE
+.vscode
+.idea
+*.swp
+*.swo
+
+# 临时文件
+*.tmp
+*.log
+
+# 结果目录（通过 volume 挂载）
+Results/
+
+# 浏览器配置文件（运行时生成）
+Profiles/
+
+# Docker 相关
+Dockerfile
+docker-compose.yml
+.dockerignore
+docker-entrypoint.sh
+
+# 文档
+README.md
+*.md
+
+# 代理文件示例（通过 volume 挂载）
+proxies.txt
+
+# 环境变量（敏感信息）
+.env
+
+# 前端 node_modules
+frontend/node_modules
+frontend/dist
+
+# VS Code
+.vscode

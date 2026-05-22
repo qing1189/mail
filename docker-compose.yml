@@ -1,0 +1,99 @@
+version: '3.8'
+
+services:
+  # 完整应用（前端 + 后端）
+  outlook-register:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: outlook-register
+    volumes:
+      - ./config.json:/app/config.json
+      - ./Results:/app/Results
+      - ./proxies.txt:/app/proxies.txt
+    env_file:
+      - .env
+    environment:
+      - ENABLE_VNC=false
+    ports:
+      - "8000:8000"
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+
+  # 带 VNC 的版本（调试用）
+  outlook-register-vnc:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: outlook-register-vnc
+    volumes:
+      - ./config.json:/app/config.json
+      - ./Results:/app/Results
+      - ./proxies.txt:/app/proxies.txt
+    env_file:
+      - .env
+    environment:
+      - ENABLE_VNC=true
+    ports:
+      - "8000:8000"
+      - "5900:5900"
+    stdin_open: true
+    tty: true
+    restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          cpus: '2'
+          memory: 4G
+        reservations:
+          cpus: '0.5'
+          memory: 1G
+    profiles:
+      - debug
+
+  # 开发模式（前端热重载）
+  dev-backend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: outlook-register-dev-backend
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/frontend/node_modules
+    env_file:
+      - .env
+    environment:
+      - ENABLE_VNC=false
+    ports:
+      - "8000:8000"
+    command: python -m uvicorn backend.main:app --host 0.0.0.0 --port 8000 --reload
+    profiles:
+      - dev
+
+  dev-frontend:
+    image: node:20-slim
+    container_name: outlook-register-dev-frontend
+    volumes:
+      - ./frontend:/app
+      - frontend-node-modules:/app/node_modules
+    working_dir: /app
+    ports:
+      - "3000:3000"
+    command: npm run dev -- --host
+    depends_on:
+      - dev-backend
+    profiles:
+      - dev
+
+volumes:
+  frontend-node-modules:
