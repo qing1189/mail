@@ -17,9 +17,10 @@ from backend.api.config import router as config_router
 from backend.api.task import router as task_router
 from backend.api.result import router as result_router
 from backend.api.auth import router as auth_router, verify_token
-from backend.api.websocket import ws_manager, broadcast_status
+from backend.api.websocket import ws_manager, broadcast_status, broadcast_log
 from backend.core.state import state
 from backend.core.task_manager import task_manager
+from backend.core.log_capture import log_capture
 
 # 静态文件目录
 STATIC_DIR = Path(__file__).parent.parent / "static"
@@ -36,13 +37,32 @@ PUBLIC_PATHS = [
 ]
 
 
+def on_log_message(message: str):
+    """日志消息回调"""
+    state.add_log(message)
+    # 异步广播到 WebSocket
+    try:
+        loop = asyncio.get_event_loop()
+        if loop.is_running():
+            asyncio.ensure_future(broadcast_log(message))
+    except Exception:
+        pass
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """应用生命周期管理"""
     # 启动时
     os.makedirs("Results", exist_ok=True)
+    
+    # 启动日志捕获
+    log_capture.set_callback(on_log_message)
+    log_capture.start()
+    
     yield
+    
     # 关闭时
+    log_capture.stop()
     task_manager.cleanup()
 
 
@@ -110,6 +130,14 @@ async def websocket_endpoint(websocket: WebSocket):
             "type": "status",
             "data": state.get_status(),
         })
+        
+        # 发送最近的日志
+        recent_logs = state.get_logs(50)
+        for log in recent_logs:
+            await websocket.send_json({
+                "type": "log",
+                "data": {"message": log},
+            })
 
         # 保持连接
         while True:
