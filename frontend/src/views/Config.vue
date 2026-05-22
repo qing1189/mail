@@ -50,6 +50,11 @@
           <el-input-number v-model="configForm.proxy_api_timeout" :min="1" :max="30" />
         </el-form-item>
 
+        <el-form-item label="跳过代理验证">
+          <el-switch v-model="configForm.proxy_skip_test" />
+          <span class="form-tip">开启后不验证代理可用性，直接使用</span>
+        </el-form-item>
+
         <!-- 任务配置 -->
         <el-divider content-position="left">任务配置</el-divider>
 
@@ -148,6 +153,7 @@ const configForm = ref({
   proxy_file: 'proxies.txt',
   proxy_api_url: '',
   proxy_api_timeout: 8,
+  proxy_skip_test: false,
   bot_protection_wait: 11,
   max_captcha_retries: 2,
   concurrent_flows: 10,

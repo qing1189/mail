@@ -17,6 +17,7 @@ _DEFAULTS = {
         "https://login.live.com",
     ],
     "proxy_test_timeout": 8,
+    "proxy_skip_test": False,  # 跳过代理验证
     "bot_protection_wait": 11,
     "max_captcha_retries": 2,
     "concurrent_flows": 10,

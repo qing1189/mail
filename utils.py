@@ -279,9 +279,10 @@ def test_proxy_connectivity(proxy_config, url, timeout):
         return False
 
     try:
+        proxies = build_requests_proxy(proxy_config)
         response = requests.get(
             url,
-            proxies=build_requests_proxy(proxy_config),
+            proxies=proxies,
             timeout=(5, timeout),
             allow_redirects=True,
             headers={
@@ -293,7 +294,8 @@ def test_proxy_connectivity(proxy_config, url, timeout):
             },
         )
         return response.ok
-    except Exception:
+    except Exception as e:
+        print(f"[Debug: Proxy] - 代理测试失败: {format_proxy_label(proxy_config)} | error={str(e)}")
         return False
 
 
@@ -326,6 +328,20 @@ def get_working_proxy(file_path=None, preferred_proxy=None, reserve=False):
         proxies = ordered_proxies
 
     if not proxies:
+        return None
+
+    # 检查是否跳过代理验证
+    data = get_config()
+    skip_test = data.get("proxy_skip_test", False)
+    
+    if skip_test:
+        # 跳过验证，直接返回第一个可用代理
+        for proxy_config in proxies:
+            if not _is_proxy_active(proxy_config):
+                if reserve and not reserve_proxy(proxy_config):
+                    continue
+                print(f"[Info: Proxy] - 跳过验证，使用代理: {format_proxy_label(proxy_config)}")
+                return proxy_config
         return None
 
     test_urls, timeout = get_proxy_test_targets()
