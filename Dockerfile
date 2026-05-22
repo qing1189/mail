@@ -17,14 +17,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
 
 # 复制依赖文件并安装 Python 依赖
-COPY requirements.txt backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt -r backend/requirements.txt
-
-# 复制项目文件
-COPY . .
-
-# 创建必要的目录
-RUN mkdir -p Profiles Results
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # 前端构建阶段
 FROM node:20-slim AS frontend-build
@@ -46,9 +40,10 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 WORKDIR /app
 
-# 复制后端依赖
-COPY requirements.txt backend/requirements.txt ./
-RUN pip install --no-cache-dir -r requirements.txt -r backend/requirements.txt
+# 复制依赖文件并安装
+COPY requirements.txt ./
+COPY backend/requirements.txt ./backend-requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt -r backend-requirements.txt && rm backend-requirements.txt
 
 # 复制后端代码
 COPY *.py ./
