@@ -1,3 +1,6 @@
 faker
 requests
 ruyipage
+fastapi
+uvicorn[standard]
+python-multipart

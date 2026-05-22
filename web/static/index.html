@@ -1,0 +1,445 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>MS Mail Reg Tool — Web 控制台</title>
+  <link rel="stylesheet" href="/assets/style.css">
+  <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+  <script defer src="/assets/app.js"></script>
+</head>
+<body>
+
+<!-- 登录 / 设置密码 -->
+<div x-data="loginApp()" x-init="init()" x-show="!authed" class="login-overlay">
+  <div class="login-card">
+    <h2 x-text="setupRequired ? '设置访问密码' : '登录控制台'"></h2>
+    <p x-text="setupRequired ? '首次使用,请设置一个密码用于后续登录' : '输入密码以访问 MS Mail Reg Tool 控制台'"></p>
+    <input
+      type="password"
+      placeholder="密码"
+      x-model="password"
+      @keydown.enter="submit()"
+      autocomplete="current-password"
+    >
+    <input
+      x-show="setupRequired"
+      type="password"
+      placeholder="再次输入密码"
+      x-model="password2"
+      @keydown.enter="submit()"
+    >
+    <button class="btn primary" @click="submit()" :disabled="loading">
+      <span x-show="!loading" x-text="setupRequired ? '设置并进入' : '登录'"></span>
+      <span x-show="loading">处理中...</span>
+    </button>
+    <div class="err" x-text="error"></div>
+  </div>
+</div>
+
+<!-- 主应用 -->
+<div x-data="mainApp()" x-init="init()" x-show="authed" class="app">
+  <header>
+    <h1>📧 MS Mail Reg Tool</h1>
+    <span class="badge" :class="wsStatus.cls" x-text="wsStatus.text"></span>
+    <span x-show="currentBatch()" class="badge running">运行中: <span x-text="currentBatch()?.label"></span></span>
+    <div class="header-spacer"></div>
+    <div class="header-actions">
+      <button class="btn small" @click="changePasswordModal = true">修改密码</button>
+      <button class="btn small" @click="logout()">退出登录</button>
+    </div>
+  </header>
+
+  <!-- 左侧:配置面板 -->
+  <aside class="sidebar">
+    <div class="tabs">
+      <button class="tab" :class="{ active: leftTab === 'config' }" @click="leftTab = 'config'">⚙️ 配置</button>
+      <button class="tab" :class="{ active: leftTab === 'proxy' }" @click="leftTab = 'proxy'">🌐 代理</button>
+      <button class="tab" :class="{ active: leftTab === 'submit' }" @click="leftTab = 'submit'">▶️ 提交批次</button>
+    </div>
+
+    <!-- 配置 tab -->
+    <div x-show="leftTab === 'config'">
+      <div class="card">
+        <div class="card-header">基础配置</div>
+        <div class="card-body">
+          <div class="form-row">
+            <label>邮箱后缀</label>
+            <select x-model="cfg.email_suffix">
+              <option value="@outlook.com">@outlook.com</option>
+              <option value="@hotmail.com">@hotmail.com</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>代理来源</label>
+            <select x-model="cfg.proxy_source">
+              <option value="api">api - 从 API 拉取</option>
+              <option value="file">file - 文件 HOST:PORT:USER:PASS</option>
+              <option value="freefile">freefile - 文件 HOST:PORT</option>
+              <option value="none">none - 直连无代理</option>
+            </select>
+          </div>
+          <div class="form-row" x-show="cfg.proxy_source === 'api'">
+            <label>代理 API 地址</label>
+            <input type="text" x-model="cfg.proxy_api_url" placeholder="https://...">
+          </div>
+          <div class="form-row" x-show="['file','freefile'].includes(cfg.proxy_source)">
+            <label>代理文件路径</label>
+            <input type="text" x-model="cfg.proxy_file" placeholder="proxies.txt">
+          </div>
+          <div class="form-row">
+            <label>并发线程数</label>
+            <input type="number" min="1" max="100" x-model.number="cfg.concurrent_flows">
+          </div>
+          <div class="form-row">
+            <label>单批次任务数</label>
+            <input type="number" min="1" max="10000" x-model.number="cfg.max_tasks">
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-header">OAuth2 授权</div>
+        <div class="card-body">
+          <div class="form-row">
+            <label>启用授权</label>
+            <select x-model.boolean="cfg.oauth2.enable_oauth2">
+              <option :value="true">启用</option>
+              <option :value="false">禁用</option>
+            </select>
+          </div>
+          <template x-if="cfg.oauth2.enable_oauth2">
+            <div>
+              <div class="form-row">
+                <label>Client ID</label>
+                <input type="text" x-model="cfg.oauth2.client_id">
+              </div>
+              <div class="form-row">
+                <label>Redirect URL</label>
+                <input type="text" x-model="cfg.oauth2.redirect_url">
+              </div>
+              <div class="form-row">
+                <label>Scopes</label>
+                <textarea rows="4" x-model="scopesText"></textarea>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-header">浏览器 (ruyipage)</div>
+        <div class="card-body">
+          <div class="form-row">
+            <label>浏览器路径</label>
+            <input type="text" x-model="cfg.ruyipage.browser_path" placeholder="留空则自动检测">
+          </div>
+          <div class="form-row">
+            <label>Profile 根目录</label>
+            <input type="text" x-model="cfg.ruyipage.profile_root">
+          </div>
+          <div class="form-row">
+            <label>Headless</label>
+            <select x-model.boolean="cfg.ruyipage.headless">
+              <option :value="true">是</option>
+              <option :value="false">否</option>
+            </select>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-header">代理高级</div>
+        <div class="card-body">
+          <div class="form-row">
+            <label>API 超时(秒)</label>
+            <input type="number" min="1" max="60" x-model.number="cfg.proxy_api_timeout">
+          </div>
+          <div class="form-row">
+            <label>测试超时(秒)</label>
+            <input type="number" min="1" max="60" x-model.number="cfg.proxy_test_timeout">
+          </div>
+          <div class="form-row">
+            <label>测试 URL 列表</label>
+            <textarea rows="3" x-model="testUrlsText" placeholder="每行一个 URL"></textarea>
+          </div>
+          <div class="form-row">
+            <label>风控等待(秒)</label>
+            <input type="number" min="0" max="60" x-model.number="cfg.bot_protection_wait">
+          </div>
+          <div class="form-row">
+            <label>验证码重试次数</label>
+            <input type="number" min="0" max="10" x-model.number="cfg.max_captcha_retries">
+          </div>
+        </div>
+      </div>
+
+      <div class="row gap16" style="margin-top:14px">
+        <button class="btn primary" @click="saveConfig()" :disabled="cfgSaving">
+          <span x-show="!cfgSaving">💾 保存配置</span>
+          <span x-show="cfgSaving">保存中...</span>
+        </button>
+        <button class="btn small" @click="loadConfig()">⟳ 重载</button>
+        <span class="muted" x-text="cfgMsg"></span>
+      </div>
+    </div>
+
+    <!-- 代理 tab -->
+    <div x-show="leftTab === 'proxy'">
+      <div class="card">
+        <div class="card-header">
+          代理文件
+          <span class="badge" x-text="proxyFile.path || 'proxies.txt'"></span>
+        </div>
+        <div class="card-body">
+          <textarea
+            rows="14"
+            x-model="proxyFile.content"
+            placeholder="每行一个代理&#10;HOST:PORT:USER:PASS  (file 模式)&#10;HOST:PORT             (freefile / api 模式)"
+            style="width:100%; background: var(--bg); border:1px solid var(--border); color: var(--text); padding: 10px; border-radius: 6px; font-family: ui-monospace, monospace; font-size: 12px;"
+          ></textarea>
+          <div class="row gap16" style="margin-top:8px">
+            <button class="btn primary" @click="saveProxyFile()" :disabled="proxySaving">
+              <span x-show="!proxySaving">💾 保存</span>
+              <span x-show="proxySaving">保存中...</span>
+            </button>
+            <button class="btn small" @click="reloadProxyFile()">⟳ 重载</button>
+            <label class="btn small">
+              📤 上传
+              <input type="file" accept=".txt" @change="uploadProxyFile($event)" style="display:none">
+            </label>
+            <span class="muted" x-text="proxyFileMsg"></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="card-header">代理测试</div>
+        <div class="card-body">
+          <div class="form-row">
+            <label>测试来源</label>
+            <select x-model="proxyTest.source">
+              <option value="current">当前配置 (按 proxy_source 加载)</option>
+              <option value="inline">编辑器中的内容</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>测试条数</label>
+            <input type="number" min="1" max="200" x-model.number="proxyTest.limit">
+          </div>
+          <div class="form-row">
+            <label>并发数</label>
+            <input type="number" min="1" max="50" x-model.number="proxyTest.concurrency">
+          </div>
+          <div class="row gap16" style="margin-top:6px">
+            <button class="btn primary" @click="runProxyTest()" :disabled="proxyTest.running">
+              <span x-show="!proxyTest.running">🛡️ 开始测试</span>
+              <span x-show="proxyTest.running">测试中...</span>
+            </button>
+            <span class="muted" x-text="proxyTest.summary"></span>
+          </div>
+          <div x-show="proxyTest.results.length" class="proxy-test-results" style="margin-top:10px">
+            <template x-for="r in proxyTest.results" :key="r.label">
+              <div class="proxy-test-row" :class="r.ok ? 'ok' : 'fail'">
+                <div class="label-line">
+                  <span class="badge" :class="r.ok ? 'success' : 'error'" x-text="r.ok ? 'OK' : 'FAIL'"></span>
+                  <span class="lbl" x-text="r.label"></span>
+                  <span class="muted" x-text="r.elapsed.toFixed(2) + 's'"></span>
+                </div>
+                <div class="urls">
+                  <template x-for="u in r.urls" :key="u.url">
+                    <div>
+                      <span x-text="u.ok ? '✓' : '✗'"></span>
+                      <span x-text="u.url"></span>
+                      <span x-show="u.status_code">(<span x-text="u.status_code"></span>)</span>
+                      <span x-show="u.error" x-text="u.error" style="color: var(--error)"></span>
+                    </div>
+                  </template>
+                </div>
+              </div>
+            </template>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 提交批次 tab -->
+    <div x-show="leftTab === 'submit'">
+      <div class="card">
+        <div class="card-header">新建批次</div>
+        <div class="card-body">
+          <div class="form-row">
+            <label>批次标签</label>
+            <input type="text" x-model="newBatch.label" placeholder="例如: 第一批 hotmail">
+          </div>
+          <div class="form-row">
+            <label>邮箱后缀</label>
+            <select x-model="newBatch.email_suffix">
+              <option value="">使用全局配置</option>
+              <option value="@outlook.com">@outlook.com</option>
+              <option value="@hotmail.com">@hotmail.com</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>代理来源</label>
+            <select x-model="newBatch.proxy_source">
+              <option value="">使用全局配置</option>
+              <option value="api">api</option>
+              <option value="file">file</option>
+              <option value="freefile">freefile</option>
+              <option value="none">none (直连)</option>
+            </select>
+          </div>
+          <div class="form-row">
+            <label>并发线程数</label>
+            <input type="number" min="1" max="100" x-model.number="newBatch.concurrent_flows" placeholder="留空用全局配置">
+          </div>
+          <div class="form-row">
+            <label>任务数</label>
+            <input type="number" min="1" max="10000" x-model.number="newBatch.max_tasks" placeholder="留空用全局配置">
+          </div>
+          <div class="row gap16" style="margin-top:6px">
+            <button class="btn primary" @click="submitBatch()" :disabled="batchSubmitting">
+              <span x-show="!batchSubmitting">▶️ 加入队列</span>
+              <span x-show="batchSubmitting">提交中...</span>
+            </button>
+            <button class="btn danger small" @click="stopAll()">⏹ 停止全部</button>
+            <span class="muted" x-text="batchMsg"></span>
+          </div>
+          <p class="help-text">提示:批次会按提交顺序排队执行,同一时刻只跑一个。</p>
+        </div>
+      </div>
+    </div>
+  </aside>
+
+  <!-- 主区:批次列表 + 日志 -->
+  <main class="main">
+    <div class="card">
+      <div class="card-header">
+        实时统计 — 当前批次
+        <template x-if="currentBatch()">
+          <span class="badge running" x-text="currentBatch().status"></span>
+        </template>
+      </div>
+      <div class="card-body">
+        <template x-if="!currentBatch()">
+          <div class="muted">当前没有运行中的批次。在左侧「提交批次」中加入新任务,或直接使用 CLI 启动。</div>
+        </template>
+        <template x-if="currentBatch()">
+          <div>
+            <div class="stats-grid">
+              <div class="stat"><div class="label">总任务</div><div class="value" x-text="currentBatch().stats.total"></div></div>
+              <div class="stat"><div class="label">已提交</div><div class="value" x-text="currentBatch().stats.submitted"></div></div>
+              <div class="stat running"><div class="label">运行中</div><div class="value" x-text="currentBatch().stats.active"></div></div>
+              <div class="stat success"><div class="label">成功</div><div class="value" x-text="currentBatch().stats.succeeded"></div></div>
+              <div class="stat error"><div class="label">失败</div><div class="value" x-text="currentBatch().stats.failed"></div></div>
+              <div class="stat"><div class="label">成功率</div><div class="value" x-text="successRate()"></div></div>
+            </div>
+            <div class="progress"><div class="bar" :style="`width:${progressPercent()}%`"></div></div>
+            <div class="muted" style="margin-top:6px" x-show="currentBatch().config_summary?.enable_oauth2">
+              授权成功: <span x-text="currentBatch().stats.oauth_succeeded"></span> ·
+              授权失败: <span x-text="currentBatch().stats.oauth_failed"></span>
+            </div>
+          </div>
+        </template>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        批次队列
+        <span class="badge" x-text="batches.length + ' 个批次'"></span>
+      </div>
+      <div class="card-body">
+        <template x-if="batches.length === 0">
+          <div class="muted">暂无批次。</div>
+        </template>
+        <div class="batches-list">
+          <template x-for="b in batches" :key="b.id">
+            <div class="batch-item">
+              <div>
+                <div class="row1">
+                  <span class="label" x-text="b.label"></span>
+                  <span class="badge" :class="badgeClass(b.status)" x-text="b.status"></span>
+                  <span class="muted" x-text="formatTime(b.created_at)"></span>
+                </div>
+                <div class="row2">
+                  <span>并发: <strong x-text="b.config_summary?.concurrent_flows"></strong></span>
+                  <span>任务: <strong x-text="b.stats.submitted"></strong>/<strong x-text="b.stats.total"></strong></span>
+                  <span>成功: <strong style="color:var(--success)" x-text="b.stats.succeeded"></strong></span>
+                  <span>失败: <strong style="color:var(--error)" x-text="b.stats.failed"></strong></span>
+                  <span>来源: <strong x-text="b.config_summary?.proxy_source"></strong></span>
+                  <span>邮箱: <strong x-text="b.config_summary?.email_suffix"></strong></span>
+                </div>
+              </div>
+              <div class="actions">
+                <button
+                  class="btn danger small"
+                  @click="cancelBatch(b.id)"
+                  x-show="['queued','running'].includes(b.status)"
+                >取消</button>
+              </div>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">
+        实时日志
+        <span class="badge" x-text="logs.length + ' 条'"></span>
+        <div style="margin-left:auto; display:flex; gap:6px">
+          <label class="muted"><input type="checkbox" x-model="autoscroll"> 自动滚动</label>
+          <button class="btn small" @click="clearLogs()">清空</button>
+        </div>
+      </div>
+      <div class="card-body" style="padding: 8px 14px 14px">
+        <div class="logs" x-ref="logBox">
+          <template x-for="(l, i) in logs" :key="i">
+            <div class="log-line" :class="l.level">
+              <span class="ts" x-text="formatTime(l.ts)"></span>
+              <span x-text="l.message"></span>
+            </div>
+          </template>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-header">已完成结果</div>
+      <div class="card-body">
+        <div class="row gap16" style="margin-bottom:8px">
+          <button class="btn small" @click="loadResults()">⟳ 刷新</button>
+          <span class="muted">注册成功: <strong x-text="results.registered?.lines || 0"></strong> 行 · OAuth Tokens: <strong x-text="results.tokens?.lines || 0"></strong> 行 · 未授权账号: <strong x-text="results.registered_unauth?.lines || 0"></strong> 行</span>
+        </div>
+        <div class="row gap16">
+          <a class="btn small" :href="downloadUrl('registered')">⬇ logged_email.txt</a>
+          <a class="btn small" :href="downloadUrl('registered_unauth')">⬇ unlogged_email.txt</a>
+          <a class="btn small" :href="downloadUrl('tokens')">⬇ outlook_token.txt</a>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <!-- 修改密码 modal (简易版) -->
+  <div x-show="changePasswordModal" class="login-overlay" style="background: rgba(0,0,0,0.6)">
+    <div class="login-card">
+      <h2>修改密码</h2>
+      <p>修改成功后会自动退出登录。</p>
+      <input type="password" placeholder="旧密码" x-model="cp.old">
+      <input type="password" placeholder="新密码" x-model="cp.new">
+      <div class="row gap16">
+        <button class="btn primary" @click="submitChangePassword()" :disabled="cp.loading">
+          <span x-show="!cp.loading">确认</span>
+          <span x-show="cp.loading">提交中...</span>
+        </button>
+        <button class="btn small" @click="changePasswordModal = false">取消</button>
+      </div>
+      <div class="err" x-text="cp.error"></div>
+    </div>
+  </div>
+</div>
+
+</body>
+</html>

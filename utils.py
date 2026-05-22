@@ -194,6 +194,9 @@ def get_proxy_candidates(file_path=None, proxy_source=None, force_refresh=False)
     source_config = get_proxy_source_config()
     selected_source = proxy_source or source_config["proxy_source"]
 
+    if selected_source == "none":
+        return []
+
     if selected_source == "api":
         global _cached_api_proxy_batch, _cached_api_proxy_signature
 
@@ -248,6 +251,8 @@ def get_next_proxy_assignment(file_path=None, proxy_source=None):
 
     source_config = get_proxy_source_config()
     selected_source = proxy_source or source_config["proxy_source"]
+    if selected_source == "none":
+        return None
     if selected_source != "api":
         return None
 
@@ -295,6 +300,10 @@ def get_proxy_test_targets():
 
 
 def get_working_proxy(file_path=None, preferred_proxy=None, reserve=False):
+    source_config = get_proxy_source_config()
+    if source_config["proxy_source"] == "none":
+        return None
+
     proxies = get_proxy_candidates(file_path)
     if not proxies and preferred_proxy:
         proxies = [preferred_proxy]

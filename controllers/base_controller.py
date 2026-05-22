@@ -9,7 +9,12 @@ from abc import ABC, abstractmethod
 from faker import Faker
 
 from config import get_config
-from utils import format_proxy_label, get_working_proxy, release_proxy
+from utils import (
+    format_proxy_label,
+    get_proxy_source_config,
+    get_working_proxy,
+    release_proxy,
+)
 
 
 class BaseBrowserController(ABC):
@@ -49,12 +54,18 @@ class BaseBrowserController(ABC):
         pass
 
     def get_thread_page(self, proxy_config=None):
-        proxy_config = get_working_proxy(preferred_proxy=proxy_config, reserve=True)
-        if not proxy_config:
-            print("[Error: Proxy Pool] - 没有可用的 HTTPS 代理。")
-            return False
+        proxy_source = get_proxy_source_config().get("proxy_source", "file")
+        direct_mode = proxy_source == "none"
 
-        print(f"[Info: Proxy] - current task using {format_proxy_label(proxy_config)}")
+        if direct_mode:
+            proxy_config = None
+            print("[Info: Proxy] - 直连模式,本任务不使用代理")
+        else:
+            proxy_config = get_working_proxy(preferred_proxy=proxy_config, reserve=True)
+            if not proxy_config:
+                print("[Error: Proxy Pool] - 没有可用的 HTTPS 代理。")
+                return False
+            print(f"[Info: Proxy] - current task using {format_proxy_label(proxy_config)}")
 
         page, resource = self.launch_browser(proxy_config)
         if not page:
