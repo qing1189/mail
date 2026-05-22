@@ -1,0 +1,37 @@
+# Git
+.git
+.gitignore
+.gitattributes
+
+# Python
+__pycache__
+**/__pycache__
+*.pyc
+*.pyo
+*.pyd
+.venv
+venv
+*.egg-info
+
+# 编辑器
+.idea
+.vscode
+.DS_Store
+
+# 项目运行时产物 (容器内通过 /data 挂载)
+data
+Profiles
+Results
+config.json
+proxies.txt
+*.log
+
+# CI / 文档
+.github
+docs
+*.md
+!README.md
+
+# 镜像打包不需要
+docker-compose.yml
+docker-compose.override.yml

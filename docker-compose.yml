@@ -1,0 +1,53 @@
+# MS Mail Reg Tool — docker-compose
+#
+# 用法:
+#   docker compose up -d                     # 启动 Web 控制台 (默认)
+#   docker compose --profile cli run --rm cli  # 跑一次交互式 CLI
+#   docker compose down                      # 停止
+#   docker compose logs -f web               # 看实时日志
+#
+# 持久化数据全部落到 ./data/ 目录:
+#   ./data/config.json    配置 (首次启动会自动生成)
+#   ./data/proxies.txt    代理列表
+#   ./data/Results/       注册结果 (logged_email.txt / outlook_token.txt 等)
+#   ./data/Profiles/      浏览器临时 profile (会被自动清理)
+
+x-build: &build
+  context: .
+  dockerfile: Dockerfile
+
+x-common: &common
+  build: *build
+  image: ms-mail-reg-tool:latest
+  # Firefox 渲染必须的共享内存,默认 64M 会导致浏览器崩溃
+  shm_size: 1gb
+  volumes:
+    - ./data:/data
+  environment:
+    - TZ=Asia/Shanghai
+    - MAIL_DATA_DIR=/data
+    # 默认 headless,容器内不要起 GUI
+    - MOZ_HEADLESS=1
+
+services:
+  web:
+    <<: *common
+    container_name: ms-mail-web
+    ports:
+      - "8787:8787"
+    restart: unless-stopped
+    # 健康检查:Web 控制台的 auth status 端点不需要登录
+    healthcheck:
+      test: ["CMD-SHELL", "python -c \"import urllib.request,sys; urllib.request.urlopen('http://127.0.0.1:8787/api/auth/status', timeout=5).read()\""]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+
+  cli:
+    <<: *common
+    container_name: ms-mail-cli
+    profiles: ["cli"]
+    stdin_open: true
+    tty: true
+    command: ["python", "main.py"]
