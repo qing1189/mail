@@ -87,7 +87,8 @@ def load_http_proxies(file_path=None, proxy_source="file"):
         data = get_config()
         file_path = data.get("proxy_file", "proxies.txt")
 
-    if not os.path.exists(file_path):
+    # 检查路径是否存在且是文件
+    if not os.path.exists(file_path) or not os.path.isfile(file_path):
         return []
 
     proxies = []

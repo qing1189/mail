@@ -9,7 +9,6 @@ services:
     container_name: outlook-register
     volumes:
       - ./Results:/app/Results
-      - ./proxies.txt:/app/proxies.txt
     env_file:
       - .env
     environment:
@@ -36,7 +35,6 @@ services:
     container_name: outlook-register-vnc
     volumes:
       - ./Results:/app/Results
-      - ./proxies.txt:/app/proxies.txt
     env_file:
       - .env
     environment:
