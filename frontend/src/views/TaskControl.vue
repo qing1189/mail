@@ -17,6 +17,7 @@
 
             <el-form-item label="代理来源">
               <el-select v-model="taskForm.proxy_source" style="width: 100%">
+                <el-option label="无代理（直连）" value="none" />
                 <el-option label="文件 (HOST:PORT:USER:PASS)" value="file" />
                 <el-option label="免费文件 (HOST:PORT)" value="freefile" />
                 <el-option label="API" value="api" />

@@ -131,10 +131,12 @@ class TaskManager:
                     and task_counter < max_tasks
                     and not self._stop_event.is_set()
                 ):
-                    assigned_proxy = get_next_proxy_assignment()
-                    if proxy_source == "api" and not assigned_proxy:
-                        time.sleep(1.0)
-                        break
+                    assigned_proxy = None
+                    if proxy_source != "none":
+                        assigned_proxy = get_next_proxy_assignment()
+                        if proxy_source == "api" and not assigned_proxy:
+                            time.sleep(1.0)
+                            break
                     future = executor.submit(self._process_single_flow, assigned_proxy)
                     running_futures.add(future)
                     task_counter += 1

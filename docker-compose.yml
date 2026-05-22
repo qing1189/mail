@@ -8,7 +8,6 @@ services:
       dockerfile: Dockerfile
     container_name: outlook-register
     volumes:
-      - ./config.json:/app/config.json
       - ./Results:/app/Results
       - ./proxies.txt:/app/proxies.txt
     env_file:
@@ -36,7 +35,6 @@ services:
       dockerfile: Dockerfile
     container_name: outlook-register-vnc
     volumes:
-      - ./config.json:/app/config.json
       - ./Results:/app/Results
       - ./proxies.txt:/app/proxies.txt
     env_file:
