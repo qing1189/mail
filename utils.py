@@ -249,14 +249,29 @@ def get_next_proxy_assignment(file_path=None, proxy_source=None):
 
     source_config = get_proxy_source_config()
     selected_source = proxy_source or source_config["proxy_source"]
-    if selected_source != "api":
+    
+    # 无代理模式
+    if selected_source == "none":
         return None
-
-    proxy = fetch_api_proxy_assignment()
-    if proxy:
-        with _proxy_assignment_lock:
-            _proxy_assignment_index += 1
-    return proxy
+    
+    # API 模式
+    if selected_source == "api":
+        proxy = fetch_api_proxy_assignment()
+        if proxy:
+            with _proxy_assignment_lock:
+                _proxy_assignment_index += 1
+        return proxy
+    
+    # 文件模式 - 从文件加载代理并轮询
+    proxies = get_proxy_candidates(file_path, proxy_source=selected_source)
+    if not proxies:
+        return None
+    
+    with _proxy_assignment_lock:
+        index = _proxy_assignment_index % len(proxies)
+        _proxy_assignment_index += 1
+    
+    return proxies[index]
 
 
 def test_proxy_connectivity(proxy_config, url, timeout):
