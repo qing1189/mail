@@ -122,7 +122,9 @@ class TaskManager:
         task_counter = 0
         proxy_source = get_proxy_source_config().get("proxy_source", "file")
         proxy_wait_count = 0
-        max_proxy_wait = 30  # 最大等待代理次数（每次1秒，共30秒）
+        max_proxy_wait = 30  # API模式最大等待代理秒数
+        consecutive_failures = 0  # 连续失败计数
+        max_consecutive_failures = max(5, concurrent_flows * 2)  # 连续失败阈值
 
         state.task_status.total_tasks = max_tasks
         state.task_status.is_running = True
@@ -140,7 +142,6 @@ class TaskManager:
                     # 检查停止事件
                     if self._stop_event.is_set():
                         print("[TaskManager] 收到停止信号，等待运行中的任务完成...")
-                        # 等待所有运行中的任务完成
                         for future in running_futures:
                             try:
                                 future.result(timeout=30)
@@ -152,6 +153,18 @@ class TaskManager:
                     if not should_submit and not running_futures:
                         break
 
+                    # 检查连续失败阈值
+                    if consecutive_failures >= max_consecutive_failures:
+                        print(f"[TaskManager] 连续失败 {consecutive_failures} 次，停止任务")
+                        self._stop_event.set()
+                        # 等待运行中的任务完成
+                        for future in running_futures:
+                            try:
+                                future.result(timeout=30)
+                            except Exception:
+                                pass
+                        break
+
                     # 检查完成的任务
                     done_futures = [f for f in running_futures if f.done()]
                     for future in done_futures:
@@ -160,6 +173,7 @@ class TaskManager:
                             result = future.result()
                             if result["success"]:
                                 state.task_status.succeeded += 1
+                                consecutive_failures = 0  # 成功则重置连续失败计数
                                 if self._controller.enable_oauth2:
                                     if result["oauth_success"]:
                                         state.task_status.oauth_succeeded += 1
@@ -167,8 +181,10 @@ class TaskManager:
                                         state.task_status.oauth_failed += 1
                             else:
                                 state.task_status.failed += 1
+                                consecutive_failures += 1
                         except Exception as e:
                             state.task_status.failed += 1
+                            consecutive_failures += 1
                             print(f"[Task-{task_id}] 异常: {str(e)}")
                         self._notify_status()
 
