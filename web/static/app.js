@@ -140,7 +140,7 @@ function mainApp() {
 
     // batches
     batches: [],
-    newBatch: { label: "", concurrent_flows: null, max_tasks: null, email_suffix: "", proxy_source: "" },
+    newBatch: { label: "", concurrent_flows: null, max_tasks: null, email_suffix: "", proxy_source: "", inline_proxies: "" },
     batchSubmitting: false,
     batchMsg: "",
 
@@ -382,15 +382,26 @@ function mainApp() {
         if (this.newBatch.max_tasks) payload.max_tasks = this.newBatch.max_tasks;
         if (this.newBatch.email_suffix) payload.email_suffix = this.newBatch.email_suffix;
         if (this.newBatch.proxy_source) payload.proxy_source = this.newBatch.proxy_source;
+        if (this.newBatch.inline_proxies && this.newBatch.inline_proxies.trim()) {
+          payload.inline_proxies = this.newBatch.inline_proxies;
+        }
         await api.post("/api/batches", payload);
         this.batchMsg = "✓ 已加入队列";
-        this.newBatch = { label: "", concurrent_flows: null, max_tasks: null, email_suffix: "", proxy_source: "" };
+        this.newBatch = { label: "", concurrent_flows: null, max_tasks: null, email_suffix: "", proxy_source: "", inline_proxies: "" };
         setTimeout(() => this.batchMsg = "", 2000);
       } catch (e) {
         this.batchMsg = "✗ 失败: " + e.message;
       } finally {
         this.batchSubmitting = false;
       }
+    },
+
+    copyCurrentProxiesToBatch() {
+      this.newBatch.inline_proxies = this.proxyFile.content || "";
+      this.batchMsg = this.newBatch.inline_proxies
+        ? `✓ 已拷贝当前 proxies.txt (${this.newBatch.inline_proxies.split('\n').filter(s => s.trim()).length} 行)`
+        : "(当前 proxies.txt 为空)";
+      setTimeout(() => this.batchMsg = "", 2500);
     },
 
     async cancelBatch(id) {

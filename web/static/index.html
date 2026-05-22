@@ -298,6 +298,21 @@
             <label>任务数</label>
             <input type="number" min="1" max="10000" x-model.number="newBatch.max_tasks" placeholder="留空用全局配置">
           </div>
+          <div class="form-row">
+            <label>临时代理列表</label>
+            <textarea
+              rows="4"
+              x-model="newBatch.inline_proxies"
+              placeholder="可粘贴 HOST:PORT 或 HOST:PORT:USER:PASS,每行一个&#10;留空 → 使用全局代理配置"
+            ></textarea>
+          </div>
+          <div class="row gap16" style="margin-top:-4px; margin-bottom: 8px">
+            <button class="btn small" @click="copyCurrentProxiesToBatch()">📋 拷贝当前 proxies.txt</button>
+            <button class="btn small" @click="newBatch.inline_proxies = ''" x-show="newBatch.inline_proxies">清空</button>
+            <span class="muted" x-show="newBatch.inline_proxies">
+              将作为本批次专用代理(自动识别格式 · 跑完即弃)
+            </span>
+          </div>
           <div class="row gap16" style="margin-top:6px">
             <button class="btn primary" @click="submitBatch()" :disabled="batchSubmitting">
               <span x-show="!batchSubmitting">▶️ 加入队列</span>
@@ -361,6 +376,9 @@
                 <div class="row1">
                   <span class="label" x-text="b.label"></span>
                   <span class="badge" :class="badgeClass(b.status)" x-text="b.status"></span>
+                  <span x-show="b.inline_proxies_count > 0" class="badge" title="本批次使用临时代理列表">
+                    📋 临时代理 <span x-text="b.inline_proxies_count"></span>
+                  </span>
                   <span class="muted" x-text="formatTime(b.created_at)"></span>
                 </div>
                 <div class="row2">

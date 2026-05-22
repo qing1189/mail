@@ -4,10 +4,16 @@
 - 用户通过 enqueue_batch() 提交批次,带上 concurrent_flows / max_tasks 等运行时参数
 - 同一时刻只跑一个批次。当前批次完成后才会取下一个
 - 支持 cancel(batch_id):排队中的直接移除;运行中的发停止信号(等线程跑完)
-- 通过 LogBus + on_state_change 回调向前端推送实时统计
+- 通过 LogBus + 自定义事件 向 WebSocket 推送实时统计
+
+新增:批次级临时代理列表
+- enqueue_batch 接受 inline_proxies_text 参数,内容会被写入 /tmp 下的临时文件
+- 批次执行时把全局 cfg.proxy_file / proxy_source 临时指向该文件
+- 批次结束自动删除临时文件,不影响全局配置
 """
 
 import os
+import tempfile
 import threading
 import time
 import uuid
@@ -43,10 +49,14 @@ class Batch:
     started_at: Optional[float] = None
     finished_at: Optional[float] = None
     error: Optional[str] = None
+    # 批次级临时代理列表(不暴露给前端,只暴露 count)
+    inline_proxies_path: Optional[str] = None
+    inline_proxies_count: int = 0
 
     def to_dict(self):
         d = asdict(self)
-        # 不把完整 config_snapshot 全发送,只发关键字段
+        # 不向前端暴露临时文件物理路径
+        d.pop("inline_proxies_path", None)
         snap = self.config_snapshot or {}
         d["config_summary"] = {
             "concurrent_flows": snap.get("concurrent_flows"),
@@ -59,6 +69,12 @@ class Batch:
 
 
 StateCallback = Callable[[str, dict], None]
+
+
+def _inline_proxies_dir() -> str:
+    path = os.path.join(tempfile.gettempdir(), "ms_mail_batches")
+    os.makedirs(path, exist_ok=True)
+    return path
 
 
 class TaskManager:
@@ -101,17 +117,44 @@ class TaskManager:
             batch = self._batches.get(batch_id)
         return batch.to_dict() if batch else None
 
-    def enqueue_batch(self, label: str, overrides: Optional[dict] = None) -> dict:
-        """创建一个批次。overrides 仅可覆盖运行时字段:
-        concurrent_flows, max_tasks, email_suffix, proxy_source。
+    def enqueue_batch(
+        self,
+        label: str,
+        overrides: Optional[dict] = None,
+        inline_proxies_text: Optional[str] = None,
+    ) -> dict:
+        """创建一个批次。
+
+        overrides 可覆盖运行时字段:
+            concurrent_flows / max_tasks / email_suffix / proxy_source / proxy_file
+
+        inline_proxies_text(可选):
+            一段代理列表文本(每行一个 HOST:PORT 或 HOST:PORT:USER:PASS)。
+            如果非空,会写到 /tmp/ms_mail_batches/{batch_id}.txt,本批次专用,
+            自动覆盖 proxy_file + 推断 proxy_source。批次结束自动删除。
         """
         snapshot = self._build_snapshot(overrides or {})
+        batch_id = f"batch-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}"
+
+        inline_path: Optional[str] = None
+        inline_count = 0
+        if inline_proxies_text and inline_proxies_text.strip():
+            inline_path, inline_count, inferred_source = self._materialize_inline_proxies(
+                batch_id, inline_proxies_text
+            )
+            if inline_path:
+                snapshot["proxy_file"] = inline_path
+                # 临时代理优先生效,覆盖 overrides 里的 proxy_source
+                snapshot["proxy_source"] = inferred_source
+
         batch = Batch(
-            id=f"batch-{int(time.time() * 1000)}-{uuid.uuid4().hex[:6]}",
+            id=batch_id,
             label=label or f"批次 #{len(self._batches) + 1}",
             status="queued",
             config_snapshot=snapshot,
             stats=BatchStats(total=int(snapshot.get("max_tasks", 0))),
+            inline_proxies_path=inline_path,
+            inline_proxies_count=inline_count,
         )
         with self._lock:
             self._batches[batch.id] = batch
@@ -130,6 +173,8 @@ class TaskManager:
                 self._queue = [b for b in self._queue if b.id != batch_id]
                 batch.status = "cancelled"
                 batch.finished_at = time.time()
+                # 排队中取消也要清理临时文件
+                self._cleanup_inline_proxies(batch)
                 self._notify("batch_updated", batch)
                 return {"ok": True, "reason": "removed_from_queue"}
 
@@ -146,12 +191,53 @@ class TaskManager:
             for batch in list(self._queue):
                 batch.status = "cancelled"
                 batch.finished_at = time.time()
+                self._cleanup_inline_proxies(batch)
                 self._notify("batch_updated", batch)
             self._queue.clear()
             if self._current:
                 self._current.status = "stopping"
                 self._stop_current.set()
                 self._notify("batch_updated", self._current)
+
+    # ── inline proxies ────────────────────────────────────────────────
+
+    def _materialize_inline_proxies(self, batch_id: str, text: str):
+        """把粘贴的代理文本写入临时文件,返回 (path, count, inferred_source)。
+
+        自动推断格式:四段冒号视为 file (HOST:PORT:USER:PASS),
+        否则视为 freefile (HOST:PORT)。
+        """
+        from .proxy_tester import parse_proxies_text
+
+        candidates_full = parse_proxies_text(text, "file")
+        candidates_free = parse_proxies_text(text, "freefile")
+        proxies = candidates_full or candidates_free
+        if not proxies:
+            log_bus.emit(
+                "warn",
+                "[Warn: Batch] - 临时代理列表无法解析任何条目,降级使用全局配置",
+            )
+            return None, 0, None
+
+        inferred_source = "file" if candidates_full else "freefile"
+        path = os.path.join(_inline_proxies_dir(), f"{batch_id}.txt")
+        with open(path, "w", encoding="utf-8") as f:
+            f.write(text)
+        log_bus.emit(
+            "info",
+            f"[Info: Batch] - 批次 {batch_id} 已导入 {len(proxies)} 条临时代理 ({inferred_source})",
+        )
+        return path, len(proxies), inferred_source
+
+    def _cleanup_inline_proxies(self, batch: Batch):
+        path = batch.inline_proxies_path
+        if not path:
+            return
+        try:
+            if os.path.exists(path):
+                os.remove(path)
+        except OSError:
+            pass
 
     # ── snapshot ──────────────────────────────────────────────────────
 
@@ -167,6 +253,7 @@ class TaskManager:
             "max_tasks",
             "email_suffix",
             "proxy_source",
+            "proxy_file",
         )
         for key in allowed:
             if key in overrides and overrides[key] is not None:
@@ -220,6 +307,8 @@ class TaskManager:
                 batch.finished_at = time.time()
                 self._current = None
             log_bus.set_current_batch(None)
+            # 临时代理文件用完即焚
+            self._cleanup_inline_proxies(batch)
             self._notify("batch_updated", batch)
             log_bus.emit(
                 "info",
@@ -249,13 +338,24 @@ class TaskManager:
         backup = {
             "email_suffix": original_cfg.get("email_suffix"),
             "proxy_source": original_cfg.get("proxy_source"),
+            "proxy_file": original_cfg.get("proxy_file"),
             "concurrent_flows": original_cfg.get("concurrent_flows"),
             "max_tasks": original_cfg.get("max_tasks"),
         }
         original_cfg["email_suffix"] = snapshot["email_suffix"]
         original_cfg["proxy_source"] = snapshot["proxy_source"]
+        if snapshot.get("proxy_file"):
+            original_cfg["proxy_file"] = snapshot["proxy_file"]
         original_cfg["concurrent_flows"] = concurrent_flows
         original_cfg["max_tasks"] = max_tasks
+
+        # 切换到本批次的代理池前,清掉上一批的代理健康/缓存状态
+        if batch.inline_proxies_path:
+            try:
+                from utils import reset_bad_proxies
+                reset_bad_proxies()
+            except Exception:
+                pass
 
         try:
             controller = self._ensure_controller()

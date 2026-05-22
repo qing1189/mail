@@ -25,7 +25,12 @@ def create_batch(payload: dict = Body(default={}), _=Depends(require_session)):
         "proxy_source": payload.get("proxy_source"),
     }
     overrides = {k: v for k, v in overrides.items() if v is not None}
-    batch = task_manager.enqueue_batch(label=label, overrides=overrides)
+    inline_proxies = payload.get("inline_proxies")
+    batch = task_manager.enqueue_batch(
+        label=label,
+        overrides=overrides,
+        inline_proxies_text=inline_proxies if isinstance(inline_proxies, str) else None,
+    )
     return batch
 
 
