@@ -49,6 +49,8 @@ export const proxyApi = {
   add: (proxy) => api.post('/proxies/add', proxy),
   delete: (host, port) => api.delete(`/proxies/${host}/${port}`),
   clear: () => api.delete('/proxies'),
+  test: (proxy) => api.post('/proxies/test', proxy),
+  testAll: () => api.post('/proxies/test-all'),
 }
 
 // 结果 API

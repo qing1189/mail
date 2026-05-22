@@ -1,4 +1,5 @@
 """代理管理 API"""
+import asyncio
 import os
 import sys
 from fastapi import APIRouter
@@ -7,6 +8,8 @@ from typing import List, Optional
 
 # 添加项目根目录到 path
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), "../.."))
+
+from utils import build_proxy_config, test_proxy_connectivity, get_proxy_test_targets
 
 router = APIRouter(prefix="/api/proxies", tags=["proxies"])
 
@@ -104,3 +107,90 @@ async def clear_proxies():
     """清空代理列表"""
     _write_proxies([])
     return {"code": 0, "message": "代理列表已清空"}
+
+
+class ProxyTestRequest(BaseModel):
+    host: str
+    port: str
+    username: Optional[str] = ""
+    password: Optional[str] = ""
+
+
+class ProxyTestResult(BaseModel):
+    host: str
+    port: str
+    username: Optional[str] = ""
+    success: bool
+    latency: Optional[float] = None
+    error: Optional[str] = None
+
+
+async def _test_single_proxy(host: str, port: str, username: str = "", password: str = "") -> dict:
+    """测试单个代理连通性"""
+    import time
+    
+    proxy_config = build_proxy_config(host, port, username, password)
+    test_urls, timeout = get_proxy_test_targets()
+    
+    start_time = time.time()
+    try:
+        # 在线程池中执行同步测试
+        loop = asyncio.get_event_loop()
+        success = await loop.run_in_executor(
+            None,
+            lambda: test_proxy_connectivity(proxy_config, test_urls[0], timeout)
+        )
+        latency = round((time.time() - start_time) * 1000, 2)  # 毫秒
+        
+        return {
+            "host": host,
+            "port": port,
+            "username": username,
+            "success": success,
+            "latency": latency if success else None,
+            "error": None if success else "连接失败"
+        }
+    except Exception as e:
+        latency = round((time.time() - start_time) * 1000, 2)
+        return {
+            "host": host,
+            "port": port,
+            "username": username,
+            "success": False,
+            "latency": latency,
+            "error": str(e)
+        }
+
+
+@router.post("/test")
+async def test_proxy(request: ProxyTestRequest):
+    """测试单个代理连通性"""
+    result = await _test_single_proxy(
+        request.host, request.port, request.username, request.password
+    )
+    return {"code": 0, "data": result}
+
+
+@router.post("/test-all")
+async def test_all_proxies():
+    """测试所有代理连通性"""
+    proxies = _read_proxies()
+    if not proxies:
+        return {"code": 0, "data": [], "message": "没有代理需要测试"}
+    
+    # 并发测试所有代理
+    tasks = [
+        _test_single_proxy(p["host"], p["port"], p.get("username", ""), p.get("password", ""))
+        for p in proxies
+    ]
+    results = await asyncio.gather(*tasks)
+    
+    # 统计结果
+    success_count = sum(1 for r in results if r["success"])
+    total_count = len(results)
+    
+    return {
+        "code": 0,
+        "data": results,
+        "message": f"测试完成: {success_count}/{total_count} 个代理可用"
+    }

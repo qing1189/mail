@@ -5,6 +5,9 @@
         <div class="card-header">
           <span>代理管理</span>
           <div class="header-actions">
+            <el-button type="success" @click="handleTestAll" :loading="testingAll">
+              {{ testingAll ? '测试中...' : '测试全部' }}
+            </el-button>
             <el-button type="primary" @click="showAddDialog = true">添加代理</el-button>
             <el-button type="danger" plain @click="handleClear">清空</el-button>
           </div>
@@ -39,9 +42,26 @@
             {{ row.password ? '******' : '-' }}
           </template>
         </el-table-column>
-        <el-table-column label="操作" width="100">
+        <el-table-column label="状态" width="150">
           <template #default="{ row }">
-            <el-button type="danger" link @click="handleDelete(row)">删除</el-button>
+            <template v-if="row._testResult">
+              <el-tag v-if="row._testResult.success" type="success" size="small">
+                {{ row._testResult.latency }}ms
+              </el-tag>
+              <el-tooltip v-else :content="row._testResult.error" placement="top">
+                <el-tag type="danger" size="small">失败</el-tag>
+              </el-tooltip>
+            </template>
+            <el-tag v-else-if="row._testing" type="info" size="small">测试中...</el-tag>
+            <el-tag v-else type="info" size="small">未测试</el-tag>
+          </template>
+        </el-table-column>
+        <el-table-column label="操作" width="150">
+          <template #default="{ row, $index }">
+            <el-button type="primary" link size="small" @click="handleTestSingle(row, $index)" :loading="row._testing">
+              测试
+            </el-button>
+            <el-button type="danger" link size="small" @click="handleDelete(row)">删除</el-button>
           </template>
         </el-table-column>
       </el-table>
@@ -83,6 +103,7 @@ import { proxyApi } from '@/api'
 const proxies = ref([])
 const showAddDialog = ref(false)
 const batchInput = ref('')
+const testingAll = ref(false)
 const newProxy = ref({
   host: '',
   port: '',
@@ -225,6 +246,67 @@ async function handleAppend() {
     }
   } catch (e) {
     ElMessage.error('追加失败')
+  }
+}
+
+async function handleTestSingle(proxy, index) {
+  // 设置测试中状态
+  proxies.value[index] = { ...proxy, _testing: true, _testResult: null }
+  
+  try {
+    const res = await proxyApi.test({
+      host: proxy.host,
+      port: proxy.port,
+      username: proxy.username || '',
+      password: proxy.password || ''
+    })
+    
+    if (res.code === 0) {
+      proxies.value[index] = { ...proxy, _testing: false, _testResult: res.data }
+      if (res.data.success) {
+        ElMessage.success(`${proxy.host}:${proxy.port} 连接成功 (${res.data.latency}ms)`)
+      } else {
+        ElMessage.error(`${proxy.host}:${proxy.port} 连接失败: ${res.data.error}`)
+      }
+    }
+  } catch (e) {
+    proxies.value[index] = { ...proxy, _testing: false, _testResult: { success: false, error: '请求失败' } }
+    ElMessage.error('测试失败')
+  }
+}
+
+async function handleTestAll() {
+  if (proxies.value.length === 0) {
+    ElMessage.warning('没有代理需要测试')
+    return
+  }
+  
+  testingAll.value = true
+  
+  // 重置所有测试状态
+  proxies.value = proxies.value.map(p => ({ ...p, _testing: true, _testResult: null }))
+  
+  try {
+    const res = await proxyApi.testAll()
+    
+    if (res.code === 0) {
+      // 更新测试结果
+      const results = res.data
+      proxies.value = proxies.value.map((proxy, index) => ({
+        ...proxy,
+        _testing: false,
+        _testResult: results[index] || { success: false, error: '未测试' }
+      }))
+      
+      // 统计结果
+      const successCount = results.filter(r => r.success).length
+      ElMessage.success(res.message || `测试完成: ${successCount}/${results.length} 个代理可用`)
+    }
+  } catch (e) {
+    proxies.value = proxies.value.map(p => ({ ...p, _testing: false, _testResult: { success: false, error: '测试失败' } }))
+    ElMessage.error('测试失败')
+  } finally {
+    testingAll.value = false
   }
 }
 </script>
