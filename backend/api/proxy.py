@@ -134,22 +134,38 @@ async def _test_single_proxy(host: str, port: str, username: str = "", password:
     
     start_time = time.time()
     try:
-        # 在线程池中执行同步测试
-        loop = asyncio.get_event_loop()
-        success = await loop.run_in_executor(
-            None,
-            lambda: test_proxy_connectivity(proxy_config, test_urls[0], timeout)
-        )
+        # 在线程池中执行同步测试，测试所有URL
+        loop = asyncio.get_running_loop()
+        
+        def test_all_urls():
+            failed_url = None
+            for url in test_urls:
+                if not test_proxy_connectivity(proxy_config, url, timeout):
+                    failed_url = url
+                    break
+            return failed_url is None, failed_url
+        
+        success, failed_url = await loop.run_in_executor(None, test_all_urls)
         latency = round((time.time() - start_time) * 1000, 2)  # 毫秒
         
-        return {
-            "host": host,
-            "port": port,
-            "username": username,
-            "success": success,
-            "latency": latency if success else None,
-            "error": None if success else "连接失败"
-        }
+        if success:
+            return {
+                "host": host,
+                "port": port,
+                "username": username,
+                "success": True,
+                "latency": latency,
+                "error": None
+            }
+        else:
+            return {
+                "host": host,
+                "port": port,
+                "username": username,
+                "success": False,
+                "latency": latency,
+                "error": f"连接失败: {failed_url}"
+            }
     except Exception as e:
         latency = round((time.time() - start_time) * 1000, 2)
         return {

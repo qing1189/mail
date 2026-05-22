@@ -167,10 +167,15 @@ class TaskManager:
                     assigned_proxy = None
                     if proxy_source != "none":
                         assigned_proxy = get_next_proxy_assignment()
-                        if proxy_source == "api" and not assigned_proxy:
-                            print("[TaskManager] 等待代理...")
-                            time.sleep(1.0)
-                            break
+                        if not assigned_proxy:
+                            if proxy_source == "api":
+                                print("[TaskManager] 等待代理...")
+                                time.sleep(1.0)
+                                break
+                            else:
+                                print(f"[TaskManager] 代理文件中没有可用代理，请检查代理配置")
+                                self._stop_event.set()
+                                break
                     
                     task_counter += 1
                     future = executor.submit(self._process_single_flow, task_counter, assigned_proxy)
